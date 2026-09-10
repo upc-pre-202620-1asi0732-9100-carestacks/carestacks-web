@@ -28,6 +28,8 @@ class CareBadge extends StatelessWidget {
         padding: padding,
         child: Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: AppTextStyles.bodySmall.copyWith(
             color: foregroundColor,
             fontWeight: FontWeight.w700,

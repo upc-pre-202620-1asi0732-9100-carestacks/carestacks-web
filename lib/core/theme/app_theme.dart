@@ -35,6 +35,26 @@ class AppTheme {
         labelMedium: AppTextStyles.labelMedium,
       ),
       iconTheme: const IconThemeData(color: AppColors.primary),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.border,
+        thickness: 1,
+        space: 1,
+      ),
+      scrollbarTheme: ScrollbarThemeData(
+        thickness: const WidgetStatePropertyAll(8),
+        radius: const Radius.circular(4),
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.hovered)
+              ? AppColors.disabled
+              : AppColors.border,
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          textStyle: AppTextStyles.labelMedium.copyWith(fontSize: 14),
+        ),
+      ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.primary,
@@ -50,21 +70,24 @@ class AppTheme {
         filled: true,
         fillColor: AppColors.surface,
         hintStyle: AppTextStyles.bodyLarge.copyWith(color: AppColors.textMuted),
+        labelStyle: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.textSecondary,
+        ),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
+          horizontal: 14,
+          vertical: 14,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.primary),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
         ),
       ),
     );

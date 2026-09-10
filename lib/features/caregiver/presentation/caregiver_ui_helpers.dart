@@ -22,10 +22,10 @@ String eventTypeLabel(String type) {
 
 String eventStatusLabel(String status) {
   return switch (status) {
-    'CONFIRMED' => 'COMPLETADO',
-    'MISSED' => 'INCUMPLIDO',
-    'CANCELLED' => 'CANCELADO',
-    _ => 'PENDIENTE',
+    'CONFIRMED' => 'Completado',
+    'MISSED' => 'Incumplido',
+    'CANCELLED' => 'Cancelado',
+    _ => 'Pendiente',
   };
 }
 

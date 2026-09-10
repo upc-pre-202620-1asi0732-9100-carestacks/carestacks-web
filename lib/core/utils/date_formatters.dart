@@ -47,6 +47,76 @@ class CareDateFormatters {
     return '$hour12:$minute $suffix';
   }
 
+  static const List<String> monthNames = [
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+  ];
+
+  static const List<String> weekdayNames = [
+    'Lunes',
+    'Martes',
+    'Miércoles',
+    'Jueves',
+    'Viernes',
+    'Sábado',
+    'Domingo',
+  ];
+
+  static const List<String> weekdayShortNames = [
+    'Lun',
+    'Mar',
+    'Mié',
+    'Jue',
+    'Vie',
+    'Sáb',
+    'Dom',
+  ];
+
+  /// "Martes 10 de septiembre"
+  static String longDate(DateTime value) {
+    final weekday = weekdayNames[value.weekday - 1];
+    final month = monthNames[value.month - 1].toLowerCase();
+    return '$weekday ${value.day} de $month';
+  }
+
+  /// "Septiembre 2026"
+  static String monthTitle(DateTime value) =>
+      '${monthNames[value.month - 1]} ${value.year}';
+
+  /// "10 sep"
+  static String dayAndMonth(DateTime value) =>
+      '${value.day} ${_months[value.month - 1]}';
+
+  /// Reloj de 24 h para vistas densas: la agenda semanal alinea columnas.
+  static String time24(DateTime value) {
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  /// "hace 2 h", "ayer", "12 sep"
+  static String relative(String? rawValue) {
+    final parsed = parse(rawValue);
+    if (parsed == null) return 'Sin fecha';
+    final difference = DateTime.now().difference(parsed);
+    if (difference.inMinutes < 1) return 'recién';
+    if (difference.inMinutes < 60) return 'hace ${difference.inMinutes} min';
+    if (difference.inHours < 24) return 'hace ${difference.inHours} h';
+    if (difference.inDays == 1) return 'ayer';
+    if (difference.inDays < 7) return 'hace ${difference.inDays} días';
+    return dayAndMonth(parsed);
+  }
+
   static DateTime? parse(String? rawValue) {
     if (rawValue == null || rawValue.isBlank) return null;
     return DateTime.tryParse(rawValue);

@@ -138,16 +138,17 @@ class _CaregiverMainPageState extends State<CaregiverMainPage> {
   void _openNotifications() {
     final dashboard = _dashboard;
     if (dashboard == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CaregiverNotificationsPage(
-          dashboard: dashboard,
-          onAcceptInvitation: _acceptInvitation,
-          onRejectInvitation: _rejectInvitation,
-          onMarkAsRead: _markNotificationAsRead,
-        ),
-      ),
+    showCaregiverNotifications(
+      context,
+      dashboard: dashboard,
+      onAcceptInvitation: _acceptInvitation,
+      onRejectInvitation: _rejectInvitation,
+      onMarkAsRead: _markNotificationAsRead,
     );
+  }
+
+  void _navigate(CareNavDestination destination) {
+    setState(() => _currentDestination = destination);
   }
 
   void _showMessage(String message) {
@@ -160,64 +161,74 @@ class _CaregiverMainPageState extends State<CaregiverMainPage> {
   @override
   Widget build(BuildContext context) {
     final dashboard = _dashboard;
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: _loading && dashboard == null
-          ? const Center(child: CircularProgressIndicator())
-          : dashboard == null
-          ? _ErrorState(
-              error: _error,
-              onRetry: _loadDashboard,
-              onLogout: _logout,
-            )
-          : IndexedStack(
-              index: _currentDestination.index,
-              children: [
-                CaregiverHomePage(
-                  dashboard: dashboard,
-                  errorMessage: _error,
-                  onNavigate: (destination) =>
-                      setState(() => _currentDestination = destination),
-                  onRefresh: () => _loadDashboard(showSpinner: false),
-                  onAcceptInvitation: _acceptInvitation,
-                  onRejectInvitation: _rejectInvitation,
-                  onNotificationsPressed: _openNotifications,
-                ),
-                CaregiverAgendaPage(
-                  dashboard: dashboard,
-                  onConfirmEvent: _confirmEvent,
-                  onSaveEvent: _saveAgendaEvent,
-                  onNotificationsPressed: _openNotifications,
-                  onRefresh: () => _loadDashboard(showSpinner: false),
-                ),
-                CaregiverDocumentsPage(
-                  dashboard: dashboard,
-                  onAddDocument: _addDocumentItem,
-                  onNotificationsPressed: _openNotifications,
-                  onRefresh: () => _loadDashboard(showSpinner: false),
-                ),
-                CaregiverDiaryPage(
-                  dashboard: dashboard,
-                  onSaveEntry: _saveDiaryEntry,
-                  onNotificationsPressed: _openNotifications,
-                  onRefresh: () => _loadDashboard(showSpinner: false),
-                ),
-                CaregiverProfilePage(
-                  dashboard: dashboard,
-                  onPatientSelected: _selectPatient,
-                  onLogout: _logout,
-                  onNotificationsPressed: _openNotifications,
-                ),
-              ],
-            ),
-      bottomNavigationBar: dashboard == null
-          ? null
-          : CareBottomNavBar(
-              currentDestination: _currentDestination,
-              onDestinationSelected: (destination) {
-                setState(() => _currentDestination = destination);
-              },
-            ),
+
+    if (_loading && dashboard == null) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (dashboard == null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: _ErrorState(
+          error: _error,
+          onRetry: _loadDashboard,
+          onLogout: _logout,
+        ),
+      );
+    }
+
+    // Cada pantalla monta su propio chrome responsive: la navegación cambia
+    // de sidebar a bottom nav según el ancho, no según la pantalla.
+    return IndexedStack(
+      index: _currentDestination.index,
+      children: [
+        CaregiverHomePage(
+          dashboard: dashboard,
+          errorMessage: _error,
+          onNavigate: _navigate,
+          onRefresh: () => _loadDashboard(showSpinner: false),
+          onAcceptInvitation: _acceptInvitation,
+          onRejectInvitation: _rejectInvitation,
+          onConfirmEvent: _confirmEvent,
+          onNotificationsPressed: _openNotifications,
+          onLogout: _logout,
+        ),
+        CaregiverAgendaPage(
+          dashboard: dashboard,
+          onConfirmEvent: _confirmEvent,
+          onSaveEvent: _saveAgendaEvent,
+          onNotificationsPressed: _openNotifications,
+          onRefresh: () => _loadDashboard(showSpinner: false),
+          onNavigate: _navigate,
+          onLogout: _logout,
+        ),
+        CaregiverDocumentsPage(
+          dashboard: dashboard,
+          onAddDocument: _addDocumentItem,
+          onNotificationsPressed: _openNotifications,
+          onRefresh: () => _loadDashboard(showSpinner: false),
+          onNavigate: _navigate,
+          onLogout: _logout,
+        ),
+        CaregiverDiaryPage(
+          dashboard: dashboard,
+          onSaveEntry: _saveDiaryEntry,
+          onNotificationsPressed: _openNotifications,
+          onRefresh: () => _loadDashboard(showSpinner: false),
+          onNavigate: _navigate,
+          onLogout: _logout,
+        ),
+        CaregiverProfilePage(
+          dashboard: dashboard,
+          onPatientSelected: _selectPatient,
+          onLogout: _logout,
+          onNotificationsPressed: _openNotifications,
+          onNavigate: _navigate,
+        ),
+      ],
     );
   }
 }
@@ -235,41 +246,60 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final layout = CareLayout.of(context);
+
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.screenPadding),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CareIconBubble(
-              icon: Icons.wifi_off,
-              size: 64,
-              iconSize: 30,
-              backgroundColor: AppColors.redLight,
-              iconColor: AppColors.redDark,
-            ),
-            const SizedBox(height: 18),
-            Text(
-              'No pudimos cargar tus datos',
-              style: AppTextStyles.titleLarge,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              error ?? 'Revisá tu conexión o vuelve a iniciar sesión.',
-              style: AppTextStyles.bodyLarge.copyWith(
-                color: AppColors.textSecondary,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Padding(
+            padding: EdgeInsets.all(layout.gutter),
+            child: CareCard(
+              variant: CareCardVariant.hero,
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CareIconBubble(
+                    icon: Icons.wifi_off,
+                    size: 56,
+                    iconSize: 26,
+                    backgroundColor: AppColors.redLight,
+                    iconColor: AppColors.redDark,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No pudimos cargar tus datos',
+                    style: layout.cardTitle.copyWith(fontSize: 20),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    error ?? 'Revisa tu conexión o vuelve a iniciar sesión.',
+                    style: layout.bodyMuted,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 22),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CareHeaderButton(
+                        label: 'Reintentar',
+                        icon: Icons.refresh,
+                        onPressed: onRetry,
+                      ),
+                      const SizedBox(width: 10),
+                      CareHeaderButton(
+                        label: 'Cerrar sesión',
+                        tone: CareHeaderButtonTone.neutral,
+                        onPressed: onLogout,
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 22),
-            CarePrimaryButton(
-              label: 'Reintentar',
-              onPressed: onRetry,
-              icon: Icons.refresh,
-            ),
-            TextButton(onPressed: onLogout, child: const Text('Cerrar sesión')),
-          ],
+          ),
         ),
       ),
     );

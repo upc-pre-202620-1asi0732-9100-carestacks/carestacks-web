@@ -33,7 +33,7 @@ class CareNotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CareCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           Row(
@@ -41,10 +41,12 @@ class CareNotificationTile extends StatelessWidget {
             children: [
               CareIconBubble(
                 icon: icon,
+                size: 38,
+                iconSize: 19,
                 backgroundColor: iconBackgroundColor,
                 iconColor: iconColor,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,7 +55,7 @@ class CareNotificationTile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: Text(title, style: AppTextStyles.titleLarge),
+                          child: Text(title, style: AppTextStyles.titleMedium),
                         ),
                         if (badge != null) ...[
                           const SizedBox(width: 8),
@@ -62,7 +64,12 @@ class CareNotificationTile extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    Text(message, style: AppTextStyles.bodyLarge),
+                    Text(
+                      message,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -90,20 +97,12 @@ class CareNotificationTile extends StatelessWidget {
               if (actionLabel != null)
                 TextButton(
                   onPressed: onActionTap,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        actionLabel!,
-                        style: AppTextStyles.titleMedium.copyWith(
-                          color: AppColors.primaryDark,
-                        ),
-                      ),
-                      const Icon(
-                        Icons.chevron_right,
-                        color: AppColors.primaryDark,
-                      ),
-                    ],
+                  child: Text(
+                    actionLabel!,
+                    style: AppTextStyles.labelMedium.copyWith(
+                      fontSize: 13,
+                      color: AppColors.primaryDark,
+                    ),
                   ),
                 ),
             ],

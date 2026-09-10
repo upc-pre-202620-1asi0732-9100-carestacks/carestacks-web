@@ -15,6 +15,8 @@ class CaregiverAgendaPage extends StatefulWidget {
     required this.onSaveEvent,
     required this.onNotificationsPressed,
     required this.onRefresh,
+    required this.onNavigate,
+    required this.onLogout,
   });
 
   final CaregiverDashboardData dashboard;
@@ -22,6 +24,8 @@ class CaregiverAgendaPage extends StatefulWidget {
   final Future<void> Function(HealthEventDraft draft) onSaveEvent;
   final VoidCallback onNotificationsPressed;
   final Future<void> Function() onRefresh;
+  final ValueChanged<CareNavDestination> onNavigate;
+  final VoidCallback onLogout;
 
   @override
   State<CaregiverAgendaPage> createState() => _CaregiverAgendaPageState();
@@ -41,106 +45,265 @@ class _CaregiverAgendaPageState extends State<CaregiverAgendaPage> {
 
   @override
   Widget build(BuildContext context) {
+    final layout = CareLayout.of(context);
     final patient = widget.dashboard.activePatient;
+    final allowed = patient != null && patient.allows('AGENDA');
     final events = [...widget.dashboard.events]
       ..sort((a, b) => (a.startAt ?? '').compareTo(b.startAt ?? ''));
-    final selectedEvents = events.where((event) {
-      return _sameDay(CareDateFormatters.parse(event.startAt), _selectedDate);
-    }).toList();
+    final selectedEvents = _eventsOn(events, _selectedDate);
+    final unread = widget.dashboard.notifications
+        .where((notification) => notification.readAt == null)
+        .length;
 
-    return Column(
-      children: [
-        Container(
-          color: AppColors.backgroundSoft,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: CareTopBar(
-            title: 'Agenda',
-            onNotificationsPressed: widget.onNotificationsPressed,
-          ),
+    return CareAppShell(
+      destination: CareNavDestination.agenda,
+      onDestinationSelected: widget.onNavigate,
+      title: 'Agenda',
+      subtitle: patient == null
+          ? 'Sin paciente activo'
+          : '${patient.patientFullName} · ${CareDateFormatters.monthTitle(_visibleMonth)}',
+      userName: widget.dashboard.user.fullName,
+      userRole: 'Cuidador',
+      onLogout: widget.onLogout,
+      onNotificationsPressed: widget.onNotificationsPressed,
+      notificationCount: unread,
+      actions: [
+        _WeekStepper(
+          onPrevious: () => _shiftDays(-7),
+          onToday: _goToToday,
+          onNext: () => _shiftDays(7),
         ),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: widget.onRefresh,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.screenPadding,
-                24,
-                AppSpacing.screenPadding,
-                28,
+        if (allowed)
+          CareHeaderButton(
+            label: 'Nuevo evento',
+            icon: Icons.add_rounded,
+            onPressed: () => _showEventForm(context),
+          ),
+      ],
+      compactBottom: allowed
+          ? Padding(
+              padding: EdgeInsets.fromLTRB(layout.gutter, 0, layout.gutter, 12),
+              child: CarePrimaryButton(
+                label: 'Agregar evento',
+                icon: Icons.add_rounded,
+                onPressed: () => _showEventForm(context),
               ),
+            )
+          : null,
+      content: CarePageBody(
+        onRefresh: widget.onRefresh,
+        children: layout.isCompact
+            ? _compactSections(layout, patient, events, selectedEvents)
+            : _desktopSections(layout, patient, allowed, events),
+      ),
+      rail: layout.hasRail
+          ? CareRailPanel(
               children: [
                 _CalendarCard(
+                  dense: true,
                   visibleMonth: _visibleMonth,
                   selectedDate: _selectedDate,
                   events: events,
                   onPreviousMonth: () => _changeMonth(-1),
                   onNextMonth: () => _changeMonth(1),
-                  onDateSelected: (date) {
-                    setState(() {
-                      _selectedDate = DateTime(date.year, date.month, date.day);
-                      _visibleMonth = DateTime(date.year, date.month);
-                    });
-                  },
+                  onDateSelected: _selectDate,
                 ),
-                const SizedBox(height: 28),
-                _EventsHeader(selectedDate: _selectedDate),
-                const SizedBox(height: 18),
-                Text(
-                  patient == null
-                      ? 'Acepta una invitación para revisar la agenda.'
-                      : patient.patientFullName,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+                const SizedBox(height: 26),
+                CareSectionTitle(
+                  _isToday(_selectedDate)
+                      ? 'Hoy'
+                      : CareDateFormatters.longDate(_selectedDate),
+                  count: allowed ? selectedEvents.length : null,
                 ),
-                const SizedBox(height: 20),
-                if (patient == null)
-                  const _EmptyAgenda(message: 'No hay paciente activo.')
-                else if (!patient.allows('AGENDA'))
-                  const _EmptyAgenda(
-                    message: 'Este paciente no compartió permisos de agenda.',
+                const SizedBox(height: 12),
+                if (!allowed)
+                  CareEmptyState(
+                    dense: true,
+                    icon: Icons.lock_outline,
+                    message: patient == null
+                        ? 'Acepta una invitación para ver la agenda.'
+                        : 'Este paciente no compartió su agenda.',
                   )
                 else if (selectedEvents.isEmpty)
-                  const _EmptyAgenda(
-                    message: 'No hay eventos programados para este día.',
+                  CareEmptyState(
+                    dense: true,
+                    icon: Icons.event_available_outlined,
+                    message: 'Sin eventos para este día.',
                   )
                 else
                   for (final event in selectedEvents) ...[
-                    _AgendaEventCard(
+                    _EventDetailCard(
                       event: event,
-                      onEdit: () => _showEventSheet(context, event: event),
+                      onEdit: () => _showEventForm(context, event: event),
                       onConfirm: event.status == 'PENDING'
                           ? () => widget.onConfirmEvent(event.id)
                           : null,
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
                   ],
               ],
-            ),
-          ),
-        ),
-        if (patient != null && patient.allows('AGENDA'))
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.screenPadding,
-              0,
-              AppSpacing.screenPadding,
-              16,
-            ),
-            child: CarePrimaryButton(
-              label: '+  Agregar evento',
-              onPressed: () => _showEventSheet(context),
-            ),
-          ),
-      ],
+            )
+          : null,
     );
   }
 
-  void _showEventSheet(BuildContext context, {HealthEvent? event}) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _EventFormSheet(event: event, onSave: widget.onSaveEvent),
+  // Escritorio: la semana entera a la vista, sin obligar a elegir un día
+  // para saber qué viene.
+  List<Widget> _desktopSections(
+    CareLayout layout,
+    LinkedPatient? patient,
+    bool allowed,
+    List<HealthEvent> events,
+  ) {
+    final weekStart = _weekStart(_selectedDate);
+    final weekEvents = events.where((event) {
+      final date = CareDateFormatters.parse(event.startAt);
+      if (date == null) return false;
+      final day = DateTime(date.year, date.month, date.day);
+      return !day.isBefore(weekStart) &&
+          day.isBefore(weekStart.add(const Duration(days: 7)));
+    }).toList();
+
+    return [
+      if (!allowed)
+        CareEmptyState(
+          icon: patient == null ? Icons.group_add_outlined : Icons.lock_outline,
+          title: patient == null
+              ? 'Sin paciente activo'
+              : 'Agenda no compartida',
+          message: patient == null
+              ? 'Acepta una invitación para gestionar la agenda de salud.'
+              : 'Este paciente no habilitó el acceso a su agenda.',
+        )
+      else ...[
+        _WeekHeadline(weekStart: weekStart, eventCount: weekEvents.length),
+        const SizedBox(height: 14),
+        _WeekGrid(
+          weekStart: weekStart,
+          selectedDate: _selectedDate,
+          events: weekEvents,
+          onDateSelected: _selectDate,
+          onEventTap: (event) {
+            final date = CareDateFormatters.parse(event.startAt);
+            if (date != null) _selectDate(date);
+            if (!CareLayout.of(context).hasRail) {
+              _showEventForm(context, event: event);
+            }
+          },
+        ),
+        SizedBox(height: layout.blockGap),
+        if (!layout.hasRail) ...[
+          CareSectionTitle(
+            _isToday(_selectedDate)
+                ? 'Eventos de hoy'
+                : 'Eventos del ${CareDateFormatters.longDate(_selectedDate)}',
+            count: _eventsOn(events, _selectedDate).length,
+          ),
+          const SizedBox(height: 12),
+          CareGrid(
+            columns: layout.gridColumns,
+            spacing: layout.columnGap,
+            runSpacing: layout.columnGap,
+            items: [
+              for (final event in _eventsOn(events, _selectedDate))
+                CareGridItem(
+                  child: _EventDetailCard(
+                    event: event,
+                    onEdit: () => _showEventForm(context, event: event),
+                    onConfirm: event.status == 'PENDING'
+                        ? () => widget.onConfirmEvent(event.id)
+                        : null,
+                  ),
+                ),
+            ],
+          ),
+          if (_eventsOn(events, _selectedDate).isEmpty)
+            CareEmptyState(
+              dense: true,
+              icon: Icons.event_available_outlined,
+              message: 'Sin eventos para este día.',
+            ),
+        ],
+      ],
+    ];
+  }
+
+  // Teléfono: mes + día seleccionado, el patrón que ya conocía el usuario.
+  List<Widget> _compactSections(
+    CareLayout layout,
+    LinkedPatient? patient,
+    List<HealthEvent> events,
+    List<HealthEvent> selectedEvents,
+  ) {
+    final allowed = patient != null && patient.allows('AGENDA');
+
+    return [
+      _CalendarCard(
+        visibleMonth: _visibleMonth,
+        selectedDate: _selectedDate,
+        events: events,
+        onPreviousMonth: () => _changeMonth(-1),
+        onNextMonth: () => _changeMonth(1),
+        onDateSelected: _selectDate,
+      ),
+      SizedBox(height: layout.blockGap),
+      CareSectionTitle(
+        _isToday(_selectedDate)
+            ? 'Eventos de hoy'
+            : CareDateFormatters.longDate(_selectedDate),
+        count: allowed ? selectedEvents.length : null,
+      ),
+      const SizedBox(height: 12),
+      if (!allowed)
+        CareEmptyState(
+          icon: patient == null ? Icons.group_add_outlined : Icons.lock_outline,
+          message: patient == null
+              ? 'Acepta una invitación para revisar la agenda.'
+              : 'Este paciente no compartió su agenda.',
+        )
+      else if (selectedEvents.isEmpty)
+        const CareEmptyState(
+          icon: Icons.event_available_outlined,
+          message: 'No hay eventos programados para este día.',
+        )
+      else
+        for (final event in selectedEvents) ...[
+          _EventDetailCard(
+            event: event,
+            onEdit: () => _showEventForm(context, event: event),
+            onConfirm: event.status == 'PENDING'
+                ? () => widget.onConfirmEvent(event.id)
+                : null,
+          ),
+          const SizedBox(height: 12),
+        ],
+    ];
+  }
+
+  List<HealthEvent> _eventsOn(List<HealthEvent> events, DateTime day) {
+    return events
+        .where(
+          (event) => _sameDay(CareDateFormatters.parse(event.startAt), day),
+        )
+        .toList();
+  }
+
+  void _selectDate(DateTime date) {
+    setState(() {
+      _selectedDate = DateTime(date.year, date.month, date.day);
+      _visibleMonth = DateTime(date.year, date.month);
+    });
+  }
+
+  void _goToToday() => _selectDate(DateTime.now());
+
+  void _shiftDays(int days) =>
+      _selectDate(_selectedDate.add(Duration(days: days)));
+
+  void _showEventForm(BuildContext context, {HealthEvent? event}) {
+    careShowForm(
+      context,
+      child: _EventFormSheet(event: event, onSave: widget.onSaveEvent),
     );
   }
 
@@ -155,6 +318,357 @@ class _CaregiverAgendaPageState extends State<CaregiverAgendaPage> {
   }
 }
 
+class _WeekHeadline extends StatelessWidget {
+  const _WeekHeadline({required this.weekStart, required this.eventCount});
+
+  final DateTime weekStart;
+  final int eventCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final layout = CareLayout.of(context);
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    final sameMonth = weekStart.month == weekEnd.month;
+    final range = sameMonth
+        ? '${weekStart.day} al ${weekEnd.day} de ${CareDateFormatters.monthNames[weekStart.month - 1].toLowerCase()}'
+        : '${CareDateFormatters.dayAndMonth(weekStart)} al ${CareDateFormatters.dayAndMonth(weekEnd)}';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Text(range, style: layout.cardTitle.copyWith(fontSize: 18)),
+        ),
+        Text(
+          eventCount == 1 ? '1 evento' : '$eventCount eventos',
+          style: layout.meta,
+        ),
+      ],
+    );
+  }
+}
+
+/// Siete columnas, una por día. Es la vista que un cuidador necesita para
+/// planificar, no un evento por vez.
+class _WeekGrid extends StatelessWidget {
+  const _WeekGrid({
+    required this.weekStart,
+    required this.selectedDate,
+    required this.events,
+    required this.onDateSelected,
+    required this.onEventTap,
+  });
+
+  final DateTime weekStart;
+  final DateTime selectedDate;
+  final List<HealthEvent> events;
+  final ValueChanged<DateTime> onDateSelected;
+  final ValueChanged<HealthEvent> onEventTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = [
+      for (int index = 0; index < 7; index++)
+        weekStart.add(Duration(days: index)),
+    ];
+
+    return CareCard(
+      padding: EdgeInsets.zero,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (int index = 0; index < days.length; index++) ...[
+              if (index > 0)
+                const VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: AppColors.border,
+                ),
+              Expanded(
+                child: _WeekDayColumn(
+                  day: days[index],
+                  selected: _sameDay(days[index], selectedDate),
+                  events: events
+                      .where(
+                        (event) => _sameDay(
+                          CareDateFormatters.parse(event.startAt),
+                          days[index],
+                        ),
+                      )
+                      .toList(),
+                  onSelect: () => onDateSelected(days[index]),
+                  onEventTap: onEventTap,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WeekDayColumn extends StatelessWidget {
+  const _WeekDayColumn({
+    required this.day,
+    required this.selected,
+    required this.events,
+    required this.onSelect,
+    required this.onEventTap,
+  });
+
+  final DateTime day;
+  final bool selected;
+  final List<HealthEvent> events;
+  final VoidCallback onSelect;
+  final ValueChanged<HealthEvent> onEventTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final layout = CareLayout.of(context);
+    final today = _isToday(day);
+    final sorted = [...events]
+      ..sort((a, b) => (a.startAt ?? '').compareTo(b.startAt ?? ''));
+
+    return Container(
+      color: selected ? AppColors.backgroundSoft : Colors.transparent,
+      constraints: const BoxConstraints(minHeight: 210),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: onSelect,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+              child: Column(
+                children: [
+                  Text(
+                    CareDateFormatters.weekdayShortNames[day.weekday - 1],
+                    style: layout.meta.copyWith(
+                      color: today
+                          ? AppColors.primary
+                          : AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: today ? AppColors.primary : Colors.transparent,
+                      border: selected && !today
+                          ? Border.all(color: AppColors.primary)
+                          : null,
+                    ),
+                    child: Text(
+                      day.day.toString(),
+                      style: AppTextStyles.labelMedium
+                          .copyWith(
+                            fontSize: 14,
+                            color: today
+                                ? AppColors.surface
+                                : AppColors.textPrimary,
+                          )
+                          .tabular,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 1, thickness: 1, color: AppColors.border),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(7, 8, 7, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (sorted.isEmpty)
+                    const SizedBox.shrink()
+                  else
+                    for (final event in sorted)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: _EventChip(
+                          event: event,
+                          onTap: () => onEventTap(event),
+                        ),
+                      ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EventChip extends StatelessWidget {
+  const _EventChip({required this.event, required this.onTap});
+
+  final HealthEvent event;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = CareDateFormatters.parse(event.startAt);
+    final accent = eventStatusForeground(event.status);
+
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        hoverColor: AppColors.primaryLight.withAlpha(90),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.border),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(width: 3, color: accent),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(7, 6, 6, 7),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          start == null
+                              ? '--:--'
+                              : CareDateFormatters.time24(start),
+                          style: AppTextStyles.bodySmall
+                              .copyWith(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textSecondary,
+                              )
+                              .tabular,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          event.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontSize: 12,
+                            height: 16 / 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WeekStepper extends StatelessWidget {
+  const _WeekStepper({
+    required this.onPrevious,
+    required this.onToday,
+    required this.onNext,
+  });
+
+  final VoidCallback onPrevious;
+  final VoidCallback onToday;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          _StepperButton(
+            icon: Icons.chevron_left,
+            tooltip: 'Semana anterior',
+            onPressed: onPrevious,
+          ),
+          const VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: AppColors.border,
+          ),
+          InkWell(
+            onTap: onToday,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Center(
+                child: Text(
+                  'Hoy',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    fontSize: 13,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: AppColors.border,
+          ),
+          _StepperButton(
+            icon: Icons.chevron_right,
+            tooltip: 'Semana siguiente',
+            onPressed: onNext,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepperButton extends StatelessWidget {
+  const _StepperButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        child: SizedBox(
+          width: 38,
+          child: Icon(icon, size: 20, color: AppColors.primaryDark),
+        ),
+      ),
+    );
+  }
+}
+
 class _CalendarCard extends StatelessWidget {
   const _CalendarCard({
     required this.visibleMonth,
@@ -163,6 +677,7 @@ class _CalendarCard extends StatelessWidget {
     required this.onPreviousMonth,
     required this.onNextMonth,
     required this.onDateSelected,
+    this.dense = false,
   });
 
   final DateTime visibleMonth;
@@ -171,6 +686,7 @@ class _CalendarCard extends StatelessWidget {
   final VoidCallback onPreviousMonth;
   final VoidCallback onNextMonth;
   final ValueChanged<DateTime> onDateSelected;
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -182,46 +698,49 @@ class _CalendarCard extends StatelessWidget {
     };
 
     return CareCard(
-      borderRadius: 12,
-      elevation: 1,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+      variant: dense ? CareCardVariant.quiet : CareCardVariant.standard,
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? 10 : 20,
+        vertical: dense ? 14 : 20,
+      ),
       child: Column(
         children: [
           Row(
             children: [
+              const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  _monthTitle(visibleMonth),
-                  style: AppTextStyles.titleLarge.copyWith(
-                    color: AppColors.primary,
+                  CareDateFormatters.monthTitle(visibleMonth),
+                  style: AppTextStyles.labelMedium.copyWith(
+                    fontSize: dense ? 14 : 16,
+                    color: AppColors.textPrimary,
                   ),
                 ),
               ),
-              IconButton(
+              _StepperButton(
+                icon: Icons.chevron_left,
                 tooltip: 'Mes anterior',
                 onPressed: onPreviousMonth,
-                icon: const Icon(Icons.chevron_left),
               ),
-              IconButton(
+              _StepperButton(
+                icon: Icons.chevron_right,
                 tooltip: 'Mes siguiente',
                 onPressed: onNextMonth,
-                icon: const Icon(Icons.chevron_right),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          const _WeekDaysRow(),
-          const SizedBox(height: 12),
-          for (var row = 0; row < dates.length; row += 7) ...[
+          SizedBox(height: dense ? 8 : 12),
+          _WeekDaysRow(dense: dense),
+          SizedBox(height: dense ? 4 : 8),
+          for (var row = 0; row < dates.length; row += 7)
             _CalendarDatesRow(
               dates: dates.sublist(row, row + 7),
               visibleMonth: visibleMonth,
               selectedDate: selectedDate,
               eventDays: eventDays,
+              dense: dense,
               onDateSelected: onDateSelected,
             ),
-            if (row < dates.length - 7) const SizedBox(height: 10),
-          ],
         ],
       ),
     );
@@ -229,7 +748,9 @@ class _CalendarCard extends StatelessWidget {
 }
 
 class _WeekDaysRow extends StatelessWidget {
-  const _WeekDaysRow();
+  const _WeekDaysRow({required this.dense});
+
+  final bool dense;
 
   static const _days = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
@@ -242,9 +763,10 @@ class _WeekDaysRow extends StatelessWidget {
             child: Text(
               day,
               textAlign: TextAlign.center,
-              style: AppTextStyles.labelMedium.copyWith(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w700,
+              style: AppTextStyles.bodySmall.copyWith(
+                fontSize: dense ? 11 : 12,
+                color: AppColors.textMuted,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -259,6 +781,7 @@ class _CalendarDatesRow extends StatelessWidget {
     required this.visibleMonth,
     required this.selectedDate,
     required this.eventDays,
+    required this.dense,
     required this.onDateSelected,
   });
 
@@ -266,6 +789,7 @@ class _CalendarDatesRow extends StatelessWidget {
   final DateTime visibleMonth;
   final DateTime selectedDate;
   final Set<String> eventDays;
+  final bool dense;
   final ValueChanged<DateTime> onDateSelected;
 
   @override
@@ -279,6 +803,7 @@ class _CalendarDatesRow extends StatelessWidget {
               muted: date.month != visibleMonth.month,
               selected: _sameDay(date, selectedDate),
               hasEvent: eventDays.contains(_dateKey(date)),
+              dense: dense,
               onTap: () => onDateSelected(date),
             ),
           ),
@@ -293,6 +818,7 @@ class _CalendarDayButton extends StatelessWidget {
     required this.muted,
     required this.selected,
     required this.hasEvent,
+    required this.dense,
     required this.onTap,
   });
 
@@ -300,38 +826,49 @@ class _CalendarDayButton extends StatelessWidget {
   final bool muted;
   final bool selected;
   final bool hasEvent;
+  final bool dense;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final textColor = selected
+    final today = _isToday(date);
+    final Color textColor = selected
         ? AppColors.surface
         : muted
-        ? AppColors.textMuted.withAlpha(166)
+        ? AppColors.textMuted.withAlpha(150)
         : AppColors.textPrimary;
+    final double size = dense ? 32 : 40;
 
     return SizedBox(
-      height: 42,
+      height: size + 4,
       child: InkWell(
-        borderRadius: BorderRadius.circular(21),
+        borderRadius: BorderRadius.circular(size),
         onTap: onTap,
         child: Center(
           child: Container(
-            width: 42,
-            height: 42,
+            width: size,
+            height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: selected ? AppColors.primary : Colors.transparent,
+              border: today && !selected
+                  ? Border.all(color: AppColors.primary)
+                  : null,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   date.day.toString(),
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    color: textColor,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                  ),
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(
+                        fontSize: dense ? 13 : 14,
+                        color: textColor,
+                        fontWeight: selected || today
+                            ? FontWeight.w700
+                            : FontWeight.w400,
+                      )
+                      .tabular,
                 ),
                 const SizedBox(height: 2),
                 Container(
@@ -355,33 +892,104 @@ class _CalendarDayButton extends StatelessWidget {
   }
 }
 
-class _EventsHeader extends StatelessWidget {
-  const _EventsHeader({required this.selectedDate});
+class _EventDetailCard extends StatelessWidget {
+  const _EventDetailCard({
+    required this.event,
+    required this.onConfirm,
+    required this.onEdit,
+  });
 
-  final DateTime selectedDate;
+  final HealthEvent event;
+  final VoidCallback? onConfirm;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            _sameDay(selectedDate, DateTime.now())
-                ? 'Eventos de hoy'
-                : 'Eventos del día',
-            style: AppTextStyles.headlineMedium,
+    final layout = CareLayout.of(context);
+
+    return CareCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CareIconBubble(
+                icon: eventIcon(event.type),
+                size: 38,
+                iconSize: 19,
+                backgroundColor: AppColors.primaryLight,
+                iconColor: AppColors.primaryDark,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(event.title, style: layout.cardTitle),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${eventTypeLabel(event.type)} · ${CareDateFormatters.timeRange(event.startAt, event.endAt)}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: layout.meta,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ),
-        Text(
-          _shortDate(selectedDate),
-          style: AppTextStyles.labelLarge.copyWith(
-            color: AppColors.primary,
-            fontWeight: FontWeight.w700,
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              CareBadge(
+                label: eventStatusLabel(event.status),
+                backgroundColor: eventStatusBackground(event.status),
+                foregroundColor: eventStatusForeground(event.status),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              ),
+              Text(CareDateFormatters.date(event.startAt), style: layout.meta),
+            ],
           ),
-        ),
-      ],
+          if (event.description.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              event.description,
+              style: layout.body.copyWith(color: AppColors.textSecondary),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (onConfirm != null)
+                CareHeaderButton(
+                  label: 'Confirmar',
+                  icon: Icons.check_rounded,
+                  onPressed: onConfirm,
+                ),
+              if (onEdit != null)
+                CareHeaderButton(
+                  label: 'Editar',
+                  tone: CareHeaderButtonTone.neutral,
+                  onPressed: onEdit,
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
+}
+
+DateTime _weekStart(DateTime date) {
+  final day = DateTime(date.year, date.month, date.day);
+  return day.subtract(Duration(days: day.weekday - 1));
 }
 
 List<DateTime> _calendarDates(DateTime visibleMonth) {
@@ -399,141 +1007,9 @@ bool _sameDay(DateTime? left, DateTime right) {
       left.day == right.day;
 }
 
+bool _isToday(DateTime date) => _sameDay(date, DateTime.now());
+
 String _dateKey(DateTime date) => '${date.year}-${date.month}-${date.day}';
-
-String _monthTitle(DateTime date) {
-  return '${_monthNames[date.month - 1]} ${date.year}';
-}
-
-String _shortDate(DateTime date) {
-  final day = date.day.toString().padLeft(2, '0');
-  return '${_monthShortNames[date.month - 1].toUpperCase()} $day';
-}
-
-const _monthNames = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
-];
-
-const _monthShortNames = [
-  'ene',
-  'feb',
-  'mar',
-  'abr',
-  'may',
-  'jun',
-  'jul',
-  'ago',
-  'sep',
-  'oct',
-  'nov',
-  'dic',
-];
-
-class _AgendaEventCard extends StatelessWidget {
-  const _AgendaEventCard({
-    required this.event,
-    required this.onConfirm,
-    required this.onEdit,
-  });
-
-  final HealthEvent event;
-  final VoidCallback? onConfirm;
-  final VoidCallback? onEdit;
-
-  @override
-  Widget build(BuildContext context) {
-    return CareCard(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CareIconBubble(
-                icon: eventIcon(event.type),
-                backgroundColor: AppColors.primaryLight,
-                iconColor: AppColors.primaryDark,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      event.title,
-                      style: AppTextStyles.titleLarge.copyWith(
-                        color: AppColors.primaryDark,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      eventTypeLabel(event.type),
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              CareBadge(
-                label: eventStatusLabel(event.status),
-                backgroundColor: eventStatusBackground(event.status),
-                foregroundColor: eventStatusForeground(event.status),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _InfoRow(
-            icon: Icons.calendar_today_outlined,
-            text: CareDateFormatters.date(event.startAt),
-          ),
-          const SizedBox(height: 8),
-          _InfoRow(
-            icon: Icons.schedule,
-            text: CareDateFormatters.timeRange(event.startAt, event.endAt),
-          ),
-          if (event.description.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              event.description,
-              style: AppTextStyles.bodyLarge.copyWith(
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-          if (onEdit != null) ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text('Editar evento'),
-            ),
-          ],
-          if (onConfirm != null) ...[
-            const SizedBox(height: 16),
-            CarePrimaryButton(
-              label: 'Confirmar evento',
-              icon: Icons.check_circle_outline,
-              onPressed: onConfirm,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
 
 class _EventFormSheet extends StatefulWidget {
   const _EventFormSheet({required this.event, required this.onSave});
@@ -597,7 +1073,7 @@ class _EventFormSheetState extends State<_EventFormSheet> {
 
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 20, 20, bottomInset + 20),
+        padding: EdgeInsets.fromLTRB(22, 22, 22, bottomInset + 22),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -605,7 +1081,7 @@ class _EventFormSheetState extends State<_EventFormSheet> {
             children: [
               Text(
                 editing ? 'Editar evento' : 'Nuevo evento',
-                style: AppTextStyles.titleLarge,
+                style: AppTextStyles.titleLarge.copyWith(fontSize: 20),
               ),
               const SizedBox(height: 18),
               _SheetTextField(
@@ -672,11 +1148,22 @@ class _EventFormSheetState extends State<_EventFormSheet> {
                 ),
               ],
               const SizedBox(height: 20),
-              CarePrimaryButton(
-                label: _saving ? 'Guardando...' : 'Guardar evento',
-                icon: Icons.save_outlined,
-                enabled: !_saving,
-                onPressed: _save,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _saving
+                        ? null
+                        : () => Navigator.of(context).pop(),
+                    child: const Text('Cancelar'),
+                  ),
+                  const SizedBox(width: 8),
+                  CareHeaderButton(
+                    label: _saving ? 'Guardando…' : 'Guardar evento',
+                    icon: Icons.check_rounded,
+                    onPressed: _saving ? null : _save,
+                  ),
+                ],
               ),
             ],
           ),
@@ -800,7 +1287,14 @@ class _PickerButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
       onPressed: onPressed,
-      icon: Icon(icon, size: 18),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 48),
+        alignment: Alignment.centerLeft,
+        foregroundColor: AppColors.textPrimary,
+        side: const BorderSide(color: AppColors.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      icon: Icon(icon, size: 18, color: AppColors.iconMuted),
       label: Text(label, overflow: TextOverflow.ellipsis),
     );
   }
@@ -809,59 +1303,4 @@ class _PickerButton extends StatelessWidget {
 String _errorMessage(Object error, String fallback) {
   if (error is ApiException) return error.message;
   return fallback;
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: AppColors.iconMuted),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _EmptyAgenda extends StatelessWidget {
-  const _EmptyAgenda({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return CareCard(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          const CareIconBubble(
-            icon: Icons.event_busy_outlined,
-            size: 58,
-            iconSize: 28,
-          ),
-          const SizedBox(height: 14),
-          Text(
-            message,
-            style: AppTextStyles.bodyLarge.copyWith(
-              color: AppColors.textSecondary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
 }

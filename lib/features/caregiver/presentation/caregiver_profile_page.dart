@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/theme.dart';
 import '../../../core/widgets/widgets.dart';
 import '../data/caregiver_models.dart';
+import 'caregiver_panels.dart';
 
 class CaregiverProfilePage extends StatelessWidget {
   const CaregiverProfilePage({
@@ -11,122 +12,234 @@ class CaregiverProfilePage extends StatelessWidget {
     required this.onPatientSelected,
     required this.onLogout,
     required this.onNotificationsPressed,
+    required this.onNavigate,
   });
 
   final CaregiverDashboardData dashboard;
   final Future<void> Function(String patientId) onPatientSelected;
   final VoidCallback onLogout;
   final VoidCallback onNotificationsPressed;
+  final ValueChanged<CareNavDestination> onNavigate;
 
   @override
   Widget build(BuildContext context) {
+    final layout = CareLayout.of(context);
     final user = dashboard.user;
     final activePatient = dashboard.activePatient;
+    final pendingInvitations = dashboard.invitations
+        .where((invitation) => invitation.isPending)
+        .length;
+    final unread = dashboard.notifications
+        .where((notification) => notification.readAt == null)
+        .length;
+
+    final summary = [
+      CareStatTile(
+        value: dashboard.patients.length.toString(),
+        label: 'Pacientes vinculados',
+        color: AppColors.primaryDark,
+      ),
+      CareStatTile(
+        value: pendingInvitations.toString(),
+        label: 'Invitaciones pendientes',
+        color: AppColors.orangeDark,
+      ),
+      CareStatTile(
+        value: dashboard.notifications.length.toString(),
+        label: 'Avisos recibidos',
+        color: AppColors.greenDark,
+      ),
+    ];
+
+    return CareAppShell(
+      destination: CareNavDestination.profile,
+      onDestinationSelected: onNavigate,
+      title: 'Perfil',
+      subtitle: user.email,
+      userName: user.fullName,
+      userRole: 'Cuidador',
+      onLogout: onLogout,
+      onNotificationsPressed: onNotificationsPressed,
+      notificationCount: unread,
+      content: CarePageBody(
+        children: [
+          _IdentityCard(user: user),
+          SizedBox(height: layout.blockGap),
+          if (!layout.hasRail) ...[
+            const CareSectionTitle('Resumen de cuidado'),
+            const SizedBox(height: 12),
+            CareGrid(
+              columns: layout.isCompact ? 3 : 3,
+              spacing: layout.columnGap,
+              runSpacing: layout.columnGap,
+              items: [for (final tile in summary) CareGridItem(child: tile)],
+            ),
+            SizedBox(height: layout.blockGap),
+          ],
+          CareSectionTitle(
+            'Pacientes vinculados',
+            count: dashboard.patients.length,
+          ),
+          const SizedBox(height: 12),
+          if (dashboard.patients.isEmpty)
+            const CareEmptyState(
+              icon: Icons.group_add_outlined,
+              title: 'Sin pacientes vinculados',
+              message:
+                  'Cuando aceptes una invitación, el paciente aparecerá aquí con los permisos que haya compartido.',
+            )
+          else
+            CareGrid(
+              columns: layout.isCompact ? 1 : 2,
+              spacing: layout.columnGap,
+              runSpacing: layout.columnGap,
+              items: [
+                for (final patient in dashboard.patients)
+                  CareGridItem(
+                    child: _PatientAccessCard(
+                      patient: patient,
+                      selected: activePatient?.patientId == patient.patientId,
+                      onTap: () => onPatientSelected(patient.patientId),
+                    ),
+                  ),
+              ],
+            ),
+          if (!layout.hasRail) ...[
+            SizedBox(height: layout.blockGap),
+            _SessionCard(onLogout: onLogout),
+          ],
+        ],
+      ),
+      rail: layout.hasRail
+          ? CareRailPanel(
+              children: [
+                const CareSectionTitle('Resumen de cuidado'),
+                const SizedBox(height: 12),
+                for (final tile in summary) ...[
+                  tile,
+                  const SizedBox(height: 10),
+                ],
+                const SizedBox(height: 18),
+                const CareSectionTitle('Sesión'),
+                const SizedBox(height: 12),
+                _SessionCard(onLogout: onLogout),
+              ],
+            )
+          : null,
+    );
+  }
+}
+
+class _IdentityCard extends StatelessWidget {
+  const _IdentityCard({required this.user});
+
+  final UserProfile user;
+
+  @override
+  Widget build(BuildContext context) {
+    final layout = CareLayout.of(context);
+
+    return CareCard(
+      variant: CareCardVariant.hero,
+      padding: EdgeInsets.all(layout.isCompact ? 20 : 24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          CircleAvatar(
+            radius: layout.isCompact ? 30 : 34,
+            backgroundColor: AppColors.primaryLight,
+            child: Text(
+              careInitials(user.fullName),
+              style: AppTextStyles.headlineMedium.copyWith(
+                fontSize: layout.isCompact ? 22 : 24,
+                color: AppColors.primaryDark,
+              ),
+            ),
+          ),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  user.fullName,
+                  style: layout.pageTitle.copyWith(
+                    fontSize: layout.isCompact ? 22 : 24,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(user.email, style: layout.bodyMuted),
+                const SizedBox(height: 12),
+                CareBadge(
+                  label: user.active
+                      ? 'Cuidador verificado'
+                      : 'Cuenta inactiva',
+                  backgroundColor: user.active
+                      ? AppColors.greenLight
+                      : AppColors.redLight,
+                  foregroundColor: user.active
+                      ? AppColors.greenDark
+                      : AppColors.redDark,
+                ),
+              ],
+            ),
+          ),
+          if (!layout.isCompact) ...[
+            const SizedBox(width: 24),
+            _AccountFacts(user: user),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Datos de la cuenta a la derecha de la identidad: evita el vacío que deja
+/// una tarjeta de perfil estirada a todo el ancho.
+class _AccountFacts extends StatelessWidget {
+  const _AccountFacts({required this.user});
+
+  final UserProfile user;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 230),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Fact(label: 'Rol', value: 'Cuidador'),
+          const SizedBox(height: 10),
+          _Fact(label: 'Estado', value: user.active ? 'Activa' : 'Inactiva'),
+          const SizedBox(height: 10),
+          _Fact(label: 'Identificador', value: user.id.isEmpty ? '—' : user.id),
+        ],
+      ),
+    );
+  }
+}
+
+class _Fact extends StatelessWidget {
+  const _Fact({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final layout = CareLayout.of(context);
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Container(
-          color: AppColors.backgroundSoft,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: CareTopBar(
-            title: 'Perfil',
-            onNotificationsPressed: onNotificationsPressed,
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.screenPadding,
-              24,
-              AppSpacing.screenPadding,
-              28,
-            ),
-            children: [
-              CareCard(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 42,
-                      backgroundColor: AppColors.primaryLight,
-                      child: Text(
-                        _initials(user.fullName),
-                        style: AppTextStyles.headlineMedium.copyWith(
-                          color: AppColors.primaryDark,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      user.fullName,
-                      style: AppTextStyles.titleLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      user.email,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    const CareBadge(
-                      label: 'Cuidador verificado',
-                      backgroundColor: AppColors.greenLight,
-                      foregroundColor: AppColors.greenDark,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              CareMetricSummaryCard(
-                title: 'RESUMEN DE CUIDADO',
-                metrics: [
-                  CareMetric(
-                    value: dashboard.patients.length.toString(),
-                    label: 'PACIENTES',
-                    color: AppColors.primaryDark,
-                  ),
-                  CareMetric(
-                    value: dashboard.invitations
-                        .where((invitation) => invitation.isPending)
-                        .length
-                        .toString(),
-                    label: 'INVITACIONES',
-                    color: AppColors.orangeDark,
-                  ),
-                  CareMetric(
-                    value: dashboard.notifications.length.toString(),
-                    label: 'AVISOS',
-                    color: AppColors.greenDark,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 26),
-              const CareSectionTitle('PACIENTES VINCULADOS'),
-              const SizedBox(height: 14),
-              if (dashboard.patients.isEmpty)
-                const _NoLinkedPatients()
-              else
-                for (final patient in dashboard.patients) ...[
-                  _PatientAccessCard(
-                    patient: patient,
-                    selected: activePatient?.patientId == patient.patientId,
-                    onTap: () => onPatientSelected(patient.patientId),
-                  ),
-                  const SizedBox(height: 14),
-                ],
-              const SizedBox(height: 16),
-              CareActionTile(
-                icon: Icons.logout,
-                label: 'Cerrar sesión',
-                iconBackgroundColor: AppColors.redLight,
-                iconColor: AppColors.redDark,
-                onTap: onLogout,
-              ),
-            ],
-          ),
+        Text(label, style: layout.meta),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.right,
+          style: layout.body.copyWith(fontWeight: FontWeight.w500),
         ),
       ],
     );
@@ -146,29 +259,40 @@ class _PatientAccessCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final layout = CareLayout.of(context);
+
     return CareCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(18),
-      backgroundColor: selected ? AppColors.backgroundSoft : AppColors.surface,
+      selected: selected,
+      backgroundColor: selected ? AppColors.backgroundSoft : null,
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              CareIconBubble(
-                icon: selected ? Icons.check_circle : Icons.person_outline,
+              CircleAvatar(
+                radius: 19,
                 backgroundColor: selected
                     ? AppColors.greenLight
                     : AppColors.primaryLight,
-                iconColor: selected
-                    ? AppColors.greenDark
-                    : AppColors.primaryDark,
+                child: Text(
+                  careInitials(patient.patientFullName),
+                  style: AppTextStyles.labelMedium.copyWith(
+                    fontSize: 13,
+                    color: selected
+                        ? AppColors.greenDark
+                        : AppColors.primaryDark,
+                  ),
+                ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   patient.patientFullName,
-                  style: AppTextStyles.titleMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: layout.cardTitle,
                 ),
               ),
               if (selected)
@@ -176,19 +300,28 @@ class _PatientAccessCard extends StatelessWidget {
                   label: 'Activo',
                   backgroundColor: AppColors.greenLight,
                   foregroundColor: AppColors.greenDark,
-                ),
+                  padding: EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                )
+              else
+                Text('Ver como activo', style: layout.meta),
             ],
           ),
           const SizedBox(height: 14),
+          Text('Acceso compartido', style: layout.meta),
+          const SizedBox(height: 8),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
             children: [
               for (final view in patient.allowedViews)
                 CareBadge(
-                  label: _viewLabel(view),
+                  label: careViewLabel(view),
                   backgroundColor: AppColors.primaryLight,
                   foregroundColor: AppColors.primaryDark,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 4,
+                  ),
                 ),
             ],
           ),
@@ -198,38 +331,42 @@ class _PatientAccessCard extends StatelessWidget {
   }
 }
 
-class _NoLinkedPatients extends StatelessWidget {
-  const _NoLinkedPatients();
+class _SessionCard extends StatelessWidget {
+  const _SessionCard({required this.onLogout});
+
+  final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) {
+    final layout = CareLayout.of(context);
+
     return CareCard(
-      padding: const EdgeInsets.all(24),
-      child: Text(
-        'Aún no tienes pacientes vinculados. Las invitaciones aparecerán en notificaciones para aceptarlas o rechazarlas.',
-        style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textSecondary),
-        textAlign: TextAlign.center,
+      variant: CareCardVariant.quiet,
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          const CareIconBubble(
+            icon: Icons.logout,
+            size: 38,
+            iconSize: 18,
+            backgroundColor: AppColors.redLight,
+            iconColor: AppColors.redDark,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Cerrar sesión en este dispositivo',
+              style: layout.body,
+            ),
+          ),
+          const SizedBox(width: 10),
+          CareHeaderButton(
+            label: 'Salir',
+            tone: CareHeaderButtonTone.neutral,
+            onPressed: onLogout,
+          ),
+        ],
       ),
     );
   }
-}
-
-String _initials(String value) {
-  final words = value
-      .trim()
-      .split(RegExp(r'\s+'))
-      .where((word) => word.isNotEmpty)
-      .take(2);
-  return words.map((word) => word[0].toUpperCase()).join();
-}
-
-String _viewLabel(String value) {
-  return switch (value) {
-    'PROFILE' => 'Perfil',
-    'AGENDA' => 'Agenda',
-    'DOCUMENTS' => 'Documentos',
-    'DIARY' => 'Diario',
-    'NOTIFICATIONS' => 'Notificaciones',
-    _ => value,
-  };
 }

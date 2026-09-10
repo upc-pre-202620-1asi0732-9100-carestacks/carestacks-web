@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import 'care_page_header.dart';
 
+/// Barra superior de telefono. En escritorio la reemplaza [CarePageHeader].
 class CareTopBar extends StatelessWidget {
   const CareTopBar({
     super.key,
@@ -11,6 +13,7 @@ class CareTopBar extends StatelessWidget {
     this.onNotificationsPressed,
     this.showMenu = true,
     this.showNotifications = true,
+    this.notificationCount = 0,
   });
 
   final String title;
@@ -18,6 +21,7 @@ class CareTopBar extends StatelessWidget {
   final VoidCallback? onNotificationsPressed;
   final bool showMenu;
   final bool showNotifications;
+  final int notificationCount;
 
   @override
   Widget build(BuildContext context) {
@@ -27,18 +31,19 @@ class CareTopBar extends StatelessWidget {
         height: 56,
         child: Row(
           children: [
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: showMenu
-                  ? IconButton(
-                      tooltip: 'Menu',
-                      onPressed: onMenuPressed,
-                      icon: const Icon(Icons.menu, size: 25),
-                      color: AppColors.primaryDark,
-                    )
-                  : null,
-            ),
+            if (showMenu)
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: IconButton(
+                  tooltip: 'Menú',
+                  onPressed: onMenuPressed,
+                  icon: const Icon(Icons.menu, size: 25),
+                  color: AppColors.primaryDark,
+                ),
+              )
+            else
+              const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
@@ -49,18 +54,14 @@ class CareTopBar extends StatelessWidget {
                 ),
               ),
             ),
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: showNotifications
-                  ? IconButton(
-                      tooltip: 'Notificaciones',
-                      onPressed: onNotificationsPressed,
-                      icon: const Icon(Icons.notifications_none, size: 25),
-                      color: AppColors.primaryDark,
-                    )
-                  : null,
-            ),
+            if (showNotifications && onNotificationsPressed != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: CareNotificationsButton(
+                  count: notificationCount,
+                  onPressed: onNotificationsPressed!,
+                ),
+              ),
           ],
         ),
       ),
