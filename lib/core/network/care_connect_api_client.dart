@@ -82,13 +82,20 @@ class CareConnectApiClient {
     } on ApiException catch (error) {
       if (error.statusCode != 404) rethrow;
 
-      final json = await _requestMap(
-        () => _httpClient.get(
-          _uri('/api/consents/me/caregiver'),
-          headers: _headers(token: token),
-        ),
-      );
-      return [LinkedPatient.fromJson(json)];
+      try {
+        final json = await _requestMap(
+          () => _httpClient.get(
+            _uri('/api/consents/me/caregiver'),
+            headers: _headers(token: token),
+          ),
+        );
+        return [LinkedPatient.fromJson(json)];
+      } on ApiException catch (fallbackError) {
+        // The legacy API returns 404 when no profile is shared, including
+        // after revocation. Treat that response as an authoritative empty list.
+        if (fallbackError.statusCode == 404) return const [];
+        rethrow;
+      }
     }
   }
 

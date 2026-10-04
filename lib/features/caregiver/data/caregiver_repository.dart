@@ -86,7 +86,7 @@ class CaregiverRepository {
       fromJson: CareNotification.fromJson,
     );
 
-    final events = activePatient == null
+    final events = activePatient == null || !activePatient.allows('AGENDA')
         ? <HealthEvent>[]
         : await _fetchListWithCache(
             key: 'agenda_${activePatient.patientId}',
@@ -94,7 +94,8 @@ class CaregiverRepository {
             toJson: (event) => event.toJson(),
             fromJson: HealthEvent.fromJson,
           );
-    final documents = activePatient == null
+    final documents =
+        activePatient == null || !activePatient.allows('DOCUMENTS')
         ? <MedicalDocument>[]
         : await _fetchListWithCache(
             key: 'documents_${activePatient.patientId}',
@@ -102,7 +103,7 @@ class CaregiverRepository {
             toJson: (document) => document.toJson(),
             fromJson: MedicalDocument.fromJson,
           );
-    final diaryEntries = activePatient == null
+    final diaryEntries = activePatient == null || !activePatient.allows('DIARY')
         ? <DiaryEntry>[]
         : await _fetchListWithCache(
             key: 'diary_${activePatient.patientId}',
