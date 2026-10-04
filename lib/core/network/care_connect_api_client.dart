@@ -350,7 +350,10 @@ class CareConnectApiClient {
       );
     }
 
-    final body = response.body.isEmpty ? null : jsonDecode(response.body);
+    // JSON and problem+json responses are UTF-8, even without a charset header.
+    final body = response.bodyBytes.isEmpty
+        ? null
+        : jsonDecode(utf8.decode(response.bodyBytes));
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return body ?? <String, dynamic>{};
     }

@@ -154,8 +154,13 @@ void main() {
     'BDD-05 incorrect credentials preserve the unauthenticated state',
     () async {
       final client = MockClient(
-        (request) async =>
-            http.Response(jsonEncode({'detail': 'Invalid credentials'}), 401),
+        (request) async => http.Response.bytes(
+          utf8.encode(
+            jsonEncode({'detail': 'Correo o contraseña incorrectos'}),
+          ),
+          401,
+          headers: {'content-type': 'application/problem+json'},
+        ),
       );
       addTearDown(client.close);
       final repo = repository(client);
@@ -164,7 +169,15 @@ void main() {
           email: 'caregiver@example.test',
           password: 'WrongPass123',
         ),
-        throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 401)),
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.statusCode, 'status', 401)
+              .having(
+                (e) => e.message,
+                'message',
+                'Correo o contraseña incorrectos',
+              ),
+        ),
       );
       expect(repo.session.token, isNull);
     },
