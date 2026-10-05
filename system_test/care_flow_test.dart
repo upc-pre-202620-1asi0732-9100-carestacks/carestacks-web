@@ -104,7 +104,10 @@ class Fixture {
         endAt: start.add(const Duration(hours: 1)),
       ),
     );
-    final events = await api.getAgendaEvents(patient.patientId);
+    final events = await api.getAgendaEvents(
+      patient.patientId,
+      token: repository.session.token!,
+    );
     return events.singleWhere((event) => event.title == 'Control TB1').id;
   }
 }
@@ -219,7 +222,10 @@ void main() {
       final patient = await f.linkedPatient();
       final eventId = await f.event(patient);
       await f.repository.confirmEvent(eventId);
-      final events = await f.api.getAgendaEvents(patient.patientId);
+      final events = await f.api.getAgendaEvents(
+        patient.patientId,
+        token: f.repository.session.token!,
+      );
       expect(
         events.singleWhere((event) => event.id == eventId).status,
         'CONFIRMED',
@@ -380,7 +386,10 @@ void main() {
         () => find.text('Evento confirmado.').evaluate().isNotEmpty,
       );
       final events = (await tester.runAsync(
-        () => f.api.getAgendaEvents(f.patient['id'] as String),
+        () => f.api.getAgendaEvents(
+          f.patient['id'] as String,
+          token: f.repository.session.token!,
+        ),
       ))!;
       expect(
         events.singleWhere((event) => event.id == eventId).status,

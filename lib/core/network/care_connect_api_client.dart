@@ -163,17 +163,21 @@ class CareConnectApiClient {
     return CareNotification.fromJson(json);
   }
 
-  Future<List<HealthEvent>> getAgendaEvents(String patientId) async {
+  Future<List<HealthEvent>> getAgendaEvents(
+    String patientId, {
+    required String token,
+  }) async {
     final json = await _requestList(
       () => _httpClient.get(
         _uri('/api/agenda/patient/$patientId'),
-        headers: _headers(),
+        headers: _headers(token: token),
       ),
     );
     return mapJsonList(json, HealthEvent.fromJson);
   }
 
   Future<HealthEvent> createAgendaEvent({
+    required String token,
     required String patientId,
     required String? caregiverId,
     required String title,
@@ -195,7 +199,7 @@ class CareConnectApiClient {
     final json = await _requestMap(
       () => _httpClient.post(
         _uri('/api/agenda'),
-        headers: _headers(),
+        headers: _headers(token: token),
         body: jsonEncode(body),
       ),
     );
@@ -203,6 +207,7 @@ class CareConnectApiClient {
   }
 
   Future<HealthEvent> updateAgendaEvent({
+    required String token,
     required String eventId,
     required String title,
     required String description,
@@ -213,7 +218,7 @@ class CareConnectApiClient {
     final json = await _requestMap(
       () => _httpClient.put(
         _uri('/api/agenda/$eventId'),
-        headers: _headers(),
+        headers: _headers(token: token),
         body: jsonEncode({
           'title': title,
           'description': description,
@@ -226,11 +231,14 @@ class CareConnectApiClient {
     return HealthEvent.fromJson(json);
   }
 
-  Future<HealthEvent> confirmAgendaEvent(String eventId) async {
+  Future<HealthEvent> confirmAgendaEvent(
+    String eventId, {
+    required String token,
+  }) async {
     final json = await _requestMap(
       () => _httpClient.patch(
         _uri('/api/agenda/$eventId/confirm'),
-        headers: _headers(),
+        headers: _headers(token: token),
       ),
     );
     return HealthEvent.fromJson(json);
