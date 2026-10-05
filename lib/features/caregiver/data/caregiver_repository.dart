@@ -86,15 +86,19 @@ class CaregiverRepository {
       fromJson: CareNotification.fromJson,
     );
 
-    final events = activePatient == null
+    final events = activePatient == null || !activePatient.allows('AGENDA')
         ? <HealthEvent>[]
         : await _fetchListWithCache(
             key: 'agenda_${activePatient.patientId}',
-            fetch: () => _apiClient.getAgendaEvents(activePatient.patientId),
+            fetch: () => _apiClient.getAgendaEvents(
+              activePatient.patientId,
+              token: token,
+            ),
             toJson: (event) => event.toJson(),
             fromJson: HealthEvent.fromJson,
           );
-    final documents = activePatient == null
+    final documents =
+        activePatient == null || !activePatient.allows('DOCUMENTS')
         ? <MedicalDocument>[]
         : await _fetchListWithCache(
             key: 'documents_${activePatient.patientId}',
@@ -102,7 +106,7 @@ class CaregiverRepository {
             toJson: (document) => document.toJson(),
             fromJson: MedicalDocument.fromJson,
           );
-    final diaryEntries = activePatient == null
+    final diaryEntries = activePatient == null || !activePatient.allows('DIARY')
         ? <DiaryEntry>[]
         : await _fetchListWithCache(
             key: 'diary_${activePatient.patientId}',
@@ -136,7 +140,7 @@ class CaregiverRepository {
   }
 
   Future<void> confirmEvent(String eventId) async {
-    await _apiClient.confirmAgendaEvent(eventId);
+    await _apiClient.confirmAgendaEvent(eventId, token: _requiredToken());
   }
 
   Future<void> saveAgendaEvent({
@@ -150,6 +154,7 @@ class CaregiverRepository {
     final eventId = draft.id;
     if (eventId == null || eventId.isEmpty) {
       await _apiClient.createAgendaEvent(
+        token: _requiredToken(),
         patientId: patient.patientId,
         caregiverId: _sessionManager.userId,
         title: draft.title.trim(),
@@ -162,6 +167,7 @@ class CaregiverRepository {
     }
 
     await _apiClient.updateAgendaEvent(
+      token: _requiredToken(),
       eventId: eventId,
       title: draft.title.trim(),
       description: draft.description.trim(),
@@ -279,6 +285,11 @@ class CaregiverRepository {
       await _cacheList(key, remote.map(toJson).toList());
       return remote;
     } catch (error) {
+      if (error is ApiException &&
+          (error.statusCode == 401 || error.statusCode == 403)) {
+        await _preferences.remove('cache_$key');
+        rethrow;
+      }
       final cached = _readList(key, fromJson);
       if (cached.isNotEmpty) return cached;
       rethrow;
